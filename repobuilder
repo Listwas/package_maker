@@ -1,0 +1,88 @@
+#!/usr/bin/env python3
+
+import argparse
+import os
+import subprocess
+import json
+from git import Repo
+
+
+def packages_search():
+    ipk_files = []
+    
+    for root, dirs, files in os.walk('.'):
+        for file in files:
+            if file.endswith('.ipk'):
+                full_path = os.path.join(root, file)
+                ipk_files.append(full_path)
+                print(f'Found .ipk file at: {full_path}')
+    
+    return ipk_files
+
+
+def make_files(repo_url, destination_path):
+    os.chdir(destination_path)
+    
+    try:
+        res = subprocess.run(['make'], capture_output=True) 
+        make_output = res.stdout.splitlines() 
+        
+        if res.returncode == 0:
+            packages_path = packages_search()
+            
+            json_message = {
+                "status": "success",
+                "packages": packages_path, 
+                "directory": destination_path,
+                "url": repo_url
+            }
+        else:
+            json_message = {
+                "status": "failure",
+                "directory": destination_path,
+                "url": repo_url,
+                "message": "Make command failed.",
+                "make_output": make_output
+            }
+
+        print(json.dumps(json_message, indent=4))
+    except Exception as e:
+        print(f"Error running make: {e}") 
+        
+
+def clone_repo(repo_url, destination_path):
+    if not repo_url.startswith("https://"):
+        repo_url = f"https://github.com/{repo_url}"
+
+    try:
+        Repo.clone_from(repo_url, destination_path)
+        print(f"Cloned to {destination_path}")
+        make_files(repo_url, destination_path)
+
+    except Exception as e:
+
+        error_message = str(e)
+
+        if 'fatal:' in error_message:
+            error_message = error_message.split('fatal:')[1].strip()
+
+        error_result = {
+            "status": "failure",
+            "directory": destination_path,
+            "url": repo_url,
+            "message": f"fatal: {error_message[:-3]}",
+        }
+        print(json.dumps(error_result, indent=4))
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-u', '--url', help="url link to repo", required=True)
+    parser.add_argument('-d', '--dir', help="destination path to save repo", default='./cloned_repo')
+
+    args = parser.parse_args()
+
+    clone_repo(args.url, args.dir)
+    
+
+main()
